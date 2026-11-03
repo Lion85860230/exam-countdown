@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#eaf4ff">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="考试倒计时">
+<meta name="format-detection" content="telephone=no">
+<title>期中考试日程 · 倒计时屏</title>
+<style>
+  :root{
+    --ink:#123a7a; --ink2:#1c56c4; --blue-bg:#eaf4ff; --line:#c8dcf5;
+    --muted:#5b6f92; --warn:#c2620a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden}
+  body{background:#f4f8fe;color:var(--ink);font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif}
+
+  /* ============ 正常视图：日程表铺满 ============ */
+  #board{height:100%;display:flex;flex-direction:column;padding:1.4vh 2vw .6vh}
+  header{text-align:center;padding:0}
+  header h1{font-size:5.6vw;color:var(--ink);letter-spacing:.15vw;line-height:1.12;font-weight:800}
+  #clock{font-size:5.6vw;color:var(--ink2);font-variant-numeric:tabular-nums;font-weight:800;
+         margin-top:.2vh;line-height:1.12;letter-spacing:.15vw}
+  #days{flex:1;display:flex;gap:1.2vw;align-items:stretch;padding:1.1vh 0 .5vh}
+  .day{flex:1;background:#fff;border:.16vw solid var(--line);border-radius:1.2vw;
+       padding:1.1vh .8vw;display:flex;flex-direction:column;box-shadow:0 .4vh 1.4vh rgba(28,86,196,.08)}
+  .day.today{border-color:var(--ink2);background:#f2f8ff}
+  .day h2{font-size:4.2vw;text-align:center;color:var(--ink);padding-bottom:1.1vh;
+          border-bottom:.16vw dashed var(--line);line-height:1.1}
+  .day h2 small{display:block;font-size:2.6vw;color:var(--muted);font-weight:normal;margin-top:.5vh}
+  .exams{flex:1;display:flex;flex-direction:column;justify-content:space-evenly}
+  .exam{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;
+        gap:.3vh;padding:.6vh .5vw;border-radius:.8vw}
+  .exam .name{font-size:4.2vw;font-weight:800;line-height:1.1;letter-spacing:.1vw}
+  .exam .time{font-size:3vw;color:var(--ink2);font-variant-numeric:tabular-nums;line-height:1.15}
+  .exam.now{background:var(--blue-bg);outline:.16vw solid var(--ink2)}
+  .exam.done{opacity:.38}
+  .exam.now::after{content:"考试中";position:absolute;right:.6vw;top:.3vh;
+                   font-size:1.5vw;color:#fff;background:var(--ink2);
+                   border-radius:.5vw;padding:.25vh .8vw;letter-spacing:.2vw}
+  footer{text-align:center;font-size:1.3vw;color:var(--muted);padding:0}
+
+  /* ============ 考试浮层：全屏淡蓝 ============ */
+  #overlay{position:fixed;inset:0;z-index:99;background:var(--blue-bg);
+           display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+  #overlay.show{display:flex}
+  #pvTag{font-size:1.8vw;color:var(--warn);letter-spacing:.3vw;min-height:2.4vh}
+  #ovDate{font-size:2.4vw;color:var(--muted);letter-spacing:.3vw}
+  #ovName{font-size:17vw;line-height:1.05;font-weight:800;color:var(--ink);letter-spacing:1vw;
+          text-shadow:0 .3vh 0 rgba(28,86,196,.15)}
+  #ovRange{font-size:4.2vw;color:var(--ink2);font-variant-numeric:tabular-nums;margin:1.5vh 0 1vh;letter-spacing:.4vw}
+  #ovCount{font-size:11vw;font-weight:800;font-variant-numeric:tabular-nums;color:var(--ink2);line-height:1}
+  #ovCount.hurry{color:var(--warn)}
+  #ovLabel{font-size:2vw;color:var(--muted);margin-top:1vh;letter-spacing:.6vw}
+  #ovBar{width:60vw;height:1.6vh;background:#fff;border:.12vw solid var(--line);border-radius:1vw;
+         overflow:hidden;margin-top:2.5vh}
+  #ovBarIn{height:100%;width:0;background:linear-gradient(90deg,var(--ink2),#6fa8ef)}
+  #ovClock{position:fixed;top:2.5vh;right:3vw;font-size:1.6vw;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  /* ============ 预览入口 / 选择面板 / 预览控制条 ============ */
+  #btnPreview{position:fixed;right:1.6vw;bottom:1.6vh;z-index:60;font-family:inherit;
+              font-size:1.1vw;padding:.8vh 1.2vw;border-radius:.6vw;cursor:pointer;
+              background:#fff;color:var(--ink2);border:.12vw solid var(--line);opacity:.55}
+  #btnPreview:hover{opacity:1}
+  #overlay.show ~ #btnPreview{display:none}     /* 真考试进行中时藏起来，避免误触 */
+
+  #picker{position:fixed;inset:0;z-index:120;background:rgba(15,37,71,.45);
+          display:none;align-items:center;justify-content:center}
+  #picker.show{display:flex}
+  #picker .box{background:#fff;border-radius:1.4vw;padding:3vh 3vw;max-width:78vw;text-align:center}
+  #picker h3{font-size:2vw;color:var(--ink);margin-bottom:.6vh}
+  #picker .tip{font-size:1.05vw;color:var(--muted);margin-bottom:2vh}
+  #pkList{display:flex;flex-wrap:wrap;gap:1vw;justify-content:center}
+  #pkList button{font-family:inherit;font-size:1.3vw;padding:1.1vh 1.3vw;border-radius:.7vw;cursor:pointer;
+                 background:var(--blue-bg);color:var(--ink);border:.12vw solid var(--line)}
+  #pkList button:hover{background:var(--ink2);color:#fff;border-color:var(--ink2)}
+  #pkList button small{display:block;font-size:.85vw;opacity:.75;margin-top:.3vh;font-variant-numeric:tabular-nums}
+
+  #pvBar{position:fixed;left:0;right:0;bottom:3vh;display:none;align-items:center;justify-content:center;
+         gap:1.6vw;font-size:1.2vw;color:var(--ink)}
+  #pvBar.show{display:flex}
+  #pvBar .tag{background:var(--ink2);color:#fff;border-radius:.5vw;padding:.4vh .8vw;letter-spacing:.1vw}
+  #pvBar button{font-family:inherit;font-size:1.1vw;padding:.6vh 1.1vw;border-radius:.5vw;cursor:pointer;
+                background:#fff;color:var(--ink2);border:.12vw solid var(--ink2)}
+  #pvBar button.on{background:var(--ink2);color:#fff}
+  #pvHint{position:fixed;left:0;right:0;bottom:1vh;text-align:center;font-size:1vw;color:var(--muted)}
+
+  /* ============ 手机竖屏 / 窄屏：日程表纵向排列，字号按屏宽放大，可上下滚动 ============ */
+  @media (max-width:760px), (max-aspect-ratio:4/5){
+    html,body{height:auto;min-height:100%;overflow-y:auto;overflow-x:hidden;
+              -webkit-text-size-adjust:100%}
+    #board{height:auto;min-height:100vh;padding:2.6vh 4vw 1.6vh}
+    header h1{font-size:5.9vw;letter-spacing:0;line-height:1.2;white-space:nowrap}
+    #clock{font-size:5.9vw;margin-top:.5vh;letter-spacing:0}
+    #days{flex:1 0 auto;flex-direction:column;gap:1.6vh;padding:1.6vh 0 .8vh}
+    .day{padding:1.4vh 3.5vw;border-radius:3vw;border-width:.4vw}
+    .day h2{font-size:7vw;padding-bottom:.9vh;border-bottom-width:.4vw;line-height:1.25}
+    .day h2 small{display:inline;font-size:4.6vw;margin:0 0 0 .5em}
+    .exams{padding-top:.6vh}
+    .exam{padding:1vh 2vw;gap:.3vh}
+    .exam .name{font-size:7.4vw;letter-spacing:0}
+    .exam .time{font-size:5.2vw}
+    .exam.now{outline-width:.4vw}
+    .exam.now::after{position:static;font-size:3.6vw;padding:.4vh 2vw;border-radius:1.6vw;
+                     margin-top:.5vh;letter-spacing:.1em}
+    footer{font-size:3.4vw;padding:0 0 1.4vh;line-height:1.4}
+    #btnPreview{font-size:3.8vw;padding:1.1vh 3.4vw;border-radius:1.6vw;right:4vw;bottom:2vh}
+
+    /* 考试浮层（手机上要更大更醒目） */
+    #pvTag{font-size:4.4vw;min-height:3vh}
+    #ovDate{font-size:6vw}
+    #ovName{font-size:27vw;letter-spacing:.02em}
+    #ovRange{font-size:6vw;margin:1.4vh 0 .6vh;letter-spacing:.1em;white-space:nowrap}
+    #ovCount{font-size:14.5vw;letter-spacing:0}
+    #ovLabel{font-size:4.6vw;margin-top:1.2vh;letter-spacing:.3em}
+    #ovBar{width:82vw;height:2.2vh;border-radius:2vw}
+    #ovClock{font-size:3.8vw;top:2vh;right:4vw}
+
+    /* 预览面板 / 控制条 */
+    #picker .box{max-width:92vw;border-radius:4vw;padding:2.6vh 4vw}
+    #picker h3{font-size:5.4vw}
+    #picker .tip{font-size:3.4vw}
+    #pkList{gap:2vw}
+    #pkList button{font-size:4.2vw;padding:1.2vh 3vw;border-radius:2vw}
+    #pkList button small{font-size:2.9vw}
+    #pvBar{gap:2.4vw;font-size:3.4vw;bottom:5vh;flex-wrap:wrap;padding:0 3vw}
+    #pvBar button{font-size:3.4vw;padding:.8vh 2.4vw}
+    #pvHint{font-size:3.2vw;bottom:.8vh}
+  }
+</style>
+</head>
+<body>
+
+<div id="board">
+  <header>
+    <h1>高三上学期期中考试 · 日程安排</h1>
+    <div id="clock">--:--:--</div>
+  </header>
+  <div id="days"></div>
+  <footer>考试进行时，本屏自动切换为全屏倒计时 · 考试结束自动恢复</footer>
+</div>
+
+<div id="overlay">
+  <div id="ovClock">--:--:--</div>
+  <div id="pvTag"></div>
+  <div id="ovDate"></div>
+  <div id="ovName"></div>
+  <div id="ovRange"></div>
+  <div id="ovCount">00:00:00</div>
+  <div id="ovLabel">距本场考试结束</div>
+  <div id="ovBar"><div id="ovBarIn"></div></div>
+</div>
+
+<button id="btnPreview">预览</button>
+
+<div id="picker">
+  <div class="box">
+    <h3>预览考试倒计时</h3>
+    <div class="tip">选一场，屏幕会立刻切换成那场考试进行中的样子（不影响正常计时）</div>
+    <div id="pkList"></div>
+    <div class="tip" style="margin:2vh 0 0">进入后可用 ×60 快进，看最后 5 分钟变色的效果；按 Esc 或点“结束预览”退出</div>
+    <div style="margin-top:1.6vh"><button id="pkClose" style="font-family:inherit;font-size:1.2vw;padding:.9vh 1.6vw;border-radius:.6vw;cursor:pointer">关闭</button></div>
+  </div>
+</div>
+
+<div id="pvBar">
+  <span class="tag">预览中</span>
+  <span id="pvInfo"></span>
+  <button data-sp="1" class="on">×1 正常速度</button>
+  <button data-sp="60">×60 快进</button>
+  <button data-sp="300">×300 极速</button>
+  <button id="pvExit">结束预览</button>
+</div>
+<div id="pvHint">预览中：按 Esc 退出</div>
+
+<script>
+/* ====== 考试日程（2026年11月3–5日） ====== */
+var YEAR = 2026;
+var SCHEDULE = [
+  {m:11,d:3, name:'物理', s:'08:00', e:'09:30'},
+  {m:11,d:3, name:'政治', s:'10:00', e:'11:30'},
+  {m:11,d:3, name:'语文', s:'14:30', e:'17:00'},
+  {m:11,d:4, name:'化学', s:'08:00', e:'09:30'},
+  {m:11,d:4, name:'历史', s:'10:00', e:'11:30'},
+  {m:11,d:4, name:'数学', s:'14:30', e:'16:30'},
+  {m:11,d:5, name:'生物', s:'08:00', e:'09:30'},
+  {m:11,d:5, name:'地理', s:'10:00', e:'11:30'},
+  {m:11,d:5, name:'英语', s:'14:30', e:'16:30'}
+];
+function hm(str){ var p=String(str).split(':'); return (+p[0])*60 + (+p[1]); }
+
+/* 纯函数：给定时刻，返回正在进行的那场考试（含开始时刻，不含结束时刻），没有则 null */
+function findNowSlot(now){
+  for(var i=0;i<SCHEDULE.length;i++){
+    var x = SCHEDULE[i];
+    if(now.getMonth()+1 !== x.m || now.getDate() !== x.d) continue;
+    var t = now.getHours()*60 + now.getMinutes() + now.getSeconds()/60;
+    if(t >= hm(x.s) && t < hm(x.e)) return x;
+  }
+  return null;
+}
+
+/* ====== 日程表渲染（只渲染一次） ====== */
+var WEEK = ['日','一','二','三','四','五','六'];
+function renderBoard(){
+  var days = {};
+  SCHEDULE.forEach(function(x){ (days[x.m+'-'+x.d] = days[x.m+'-'+x.d] || []).push(x); });
+  var html = '';
+  Object.keys(days).forEach(function(k){
+    var p = k.split('-'), m=+p[0], d=+p[1];
+    var w = new Date(YEAR, m-1, d).getDay();
+    html += '<div class="day" id="day-'+m+'-'+d+'"><h2>'+m+'月'+d+'日<small>星期'+WEEK[w]+'</small></h2><div class="exams">';
+    days[k].forEach(function(x,i){
+      html += '<div class="exam" id="ex-'+x.m+'-'+x.d+'-'+i+'"><div class="name">'+x.name+'</div>'+
+              '<div class="time">'+x.s+' — '+x.e+'</div></div>';
+    });
+    html += '</div></div>';
+  });
+  document.getElementById('days').innerHTML = html;
+}
+
+/* ====== 预览：不是考试时间也能把考试中的样子调出来看 ====== */
+var PV = {on:false, idx:-1, slot:null, speed:1, t:0, endMs:0, started:false};
+function slotStartMs(x){ return new Date(YEAR, x.m-1, x.d, Math.floor(hm(x.s)/60), hm(x.s)%60, 0).getTime(); }
+function slotEndMs(x){   return new Date(YEAR, x.m-1, x.d, Math.floor(hm(x.e)/60), hm(x.e)%60, 0).getTime(); }
+
+function renderPicker(){
+  var html = '';
+  SCHEDULE.forEach(function(x, i){
+    html += '<button data-i="'+i+'">'+x.name+'<small>'+x.m+'/'+x.d+' '+x.s+'—'+x.e+'</small></button>';
+  });
+  document.getElementById('pkList').innerHTML = html;
+  document.getElementById('pkList').onclick = function(e){
+    var b = e.target.closest ? e.target.closest('button[data-i]') : null;
+    if(b) pvStart(+b.getAttribute('data-i'));
+  };
+}
+function pvStart(i){
+  var x = SCHEDULE[i]; if(!x) return;
+  PV.on = true; PV.idx = i; PV.slot = x; PV.speed = 1;
+  PV.t = slotStartMs(x); PV.endMs = slotEndMs(x); PV.started = false;   // 首次渲染显示满时长，再逐秒递减
+  document.getElementById('picker').classList.remove('show');
+  pvSetSpeed(1);
+  tick();
+}
+function pvStop(){
+  PV.on = false; PV.slot = null; PV.idx = -1;
+  document.getElementById('pvBar').classList.remove('show');
+  document.getElementById('pvHint').style.display = 'none';
+  tick();
+}
+function pvSetSpeed(n){
+  PV.speed = n;
+  var bs = document.querySelectorAll('#pvBar button[data-sp]');
+  for(var i=0;i<bs.length;i++) bs[i].className = (+bs[i].getAttribute('data-sp') === n)? 'on' : '';
+}
+
+/* ====== 每秒刷新 ====== */
+function pad(n){ return (n<10?'0':'')+n; }
+function tick(){
+  var now, x;
+  if(PV.on){
+    if(PV.started) PV.t = Math.min(PV.t + PV.speed*1000, PV.endMs);     // 走到结束时刻就停住，方便确认收尾效果
+    else PV.started = true;
+    now = new Date(PV.t);
+    x = PV.slot;
+  }else{
+    now = new Date();
+    x = findNowSlot(now);
+  }
+  var t = pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds());
+  document.getElementById('clock').textContent = t;
+  document.getElementById('ovClock').textContent = t;
+
+  var ov = document.getElementById('overlay');
+  if(x){
+    var end = slotEndMs(x), start = slotStartMs(x);
+    var left = Math.max(0, Math.floor((end - now)/1000));
+    var h = Math.floor(left/3600), mnt = Math.floor(left%3600/60), s = left%60;
+    document.getElementById('ovDate').textContent = x.m+'月'+x.d+'日';
+    document.getElementById('ovName').textContent = x.name;
+    document.getElementById('ovRange').textContent = x.s + ' — ' + x.e;
+    document.getElementById('ovCount').textContent = pad(h)+':'+pad(mnt)+':'+pad(s);
+    document.getElementById('ovCount').className = left <= 300 ? 'hurry' : '';
+    var pct = Math.min(100, Math.max(0, (now - start)/(end - start)*100));
+    document.getElementById('ovBarIn').style.width = pct.toFixed(2)+'%';
+    ov.classList.add('show');
+  } else {
+    ov.classList.remove('show');
+  }
+
+  /* 预览控制条 */
+  var bar = document.getElementById('pvBar'), hint = document.getElementById('pvHint');
+  if(PV.on){
+    bar.classList.add('show'); hint.style.display = 'block';
+    document.getElementById('pvTag').textContent = '（预览）';
+    document.getElementById('pvInfo').textContent =
+      PV.slot.name + ' · 模拟时间 ' + (PV.slot.m)+'月'+(PV.slot.d)+'日 ' + t + ' · 速度 ×' + PV.speed;
+  }else{
+    bar.classList.remove('show'); hint.style.display = 'none';
+    document.getElementById('pvTag').textContent = '';
+  }
+  refreshMarks(now, x);
+}
+/* 日程表上标"考试中/已结束"（无考试时用户看到的就是这张表） */
+function refreshMarks(now, cur){
+  var t = now.getHours()*60 + now.getMinutes();
+  if(cur === undefined) cur = findNowSlot(now);
+  SCHEDULE.forEach(function(x,i){
+    var el = document.getElementById('ex-'+x.m+'-'+x.d+'-'+i);
+    if(!el) return;
+    var isNow = cur && cur.name===x.name && cur.s===x.s;
+    el.className = 'exam' + (isNow? ' now' : (t >= hm(x.e) && x.m===now.getMonth()+1 && x.d===now.getDate()? ' done':''));
+  });
+  var isToday = SCHEDULE.some(function(x){ return x.m===now.getMonth()+1 && x.d===now.getDate(); });
+  SCHEDULE.forEach(function(x){
+    var day = document.getElementById('day-'+x.m+'-'+x.d);
+    if(day) day.className = 'day' + (x.m===now.getMonth()+1 && x.d===now.getDate()? ' today':'');
+  });
+}
+
+renderBoard();
+renderPicker();
+tick();
+setInterval(tick, 1000);
+
+/* ====== 预览交互 ====== */
+document.getElementById('btnPreview').onclick = function(){
+  document.getElementById('picker').classList.add('show');
+};
+document.getElementById('pkClose').onclick = function(){
+  document.getElementById('picker').classList.remove('show');
+};
+document.getElementById('pvExit').onclick = pvStop;
+var sps = document.querySelectorAll('#pvBar button[data-sp]');
+for(var i=0;i<sps.length;i++){
+  sps[i].onclick = function(){ pvSetSpeed(+this.getAttribute('data-sp')); };
+}
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape'){
+    if(document.getElementById('picker').classList.contains('show')) document.getElementById('picker').classList.remove('show');
+    else if(PV.on) pvStop();
+  }
+});
+</script>
+</body>
+</html>
